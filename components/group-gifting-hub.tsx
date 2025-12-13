@@ -28,8 +28,6 @@ import {
   Sparkles,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import LoginModal from "./login-modal" // Assuming LoginModal is in the same directory
-import SignUpModal from "./signup-modal" // Assuming SignUpModal is in the same directory
 
 interface ProductData {
   name: string
@@ -49,7 +47,7 @@ function GroupGiftingHub() {
   const [product, setProduct] = useState<ProductData>(DEFAULT_PRODUCT)
   const [isLoadingProduct, setIsLoadingProduct] = useState(true)
 
-  const [currentStep, setCurrentStep] = useState<"customize" | "amount" | "message">("customize")
+  const [currentStep, setCurrentStep] = useState<"customize" | "amount" | "message" | "addProduct">("customize")
 
   const [collectionTitle, setCollectionTitle] = useState("")
   const [collectionDescription, setCollectionDescription] = useState("")
@@ -58,6 +56,10 @@ function GroupGiftingHub() {
   const [fundraisingGoal, setFundraisingGoal] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isExtractingBanner, setIsExtractingBanner] = useState(false) // Declare isExtractingBanner
+
+  const [productLink, setProductLink] = useState("")
+  const [isExtractingProduct, setIsExtractingProduct] = useState(false)
+  const [extractedProduct, setExtractedProduct] = useState<any>(null)
 
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
@@ -105,32 +107,7 @@ function GroupGiftingHub() {
   const isStartFundingComplete = collectionTitle && collectionBanner && fundraisingGoal
 
   useEffect(() => {
-    const fetchGroupGiftingProducts = async () => {
-      try {
-        setIsLoadingProduct(true)
-        const response = await fetch("/api/group-gifting/products")
-
-        if (!response.ok) {
-          throw new Error("Failed to fetch products")
-        }
-
-        const data = await response.json()
-
-        if (data.products && data.products.length > 0) {
-          const latestProduct = data.products[data.products.length - 1]
-          setProduct(latestProduct)
-        } else {
-          setProduct(DEFAULT_PRODUCT)
-        }
-      } catch (error) {
-        console.error("[v0] Error fetching group gifting products:", error)
-        setProduct(DEFAULT_PRODUCT)
-      } finally {
-        setIsLoadingProduct(false)
-      }
-    }
-
-    fetchGroupGiftingProducts()
+    setIsLoadingProduct(false)
   }, [])
 
   const handlePresetClick = (value: number) => {
@@ -446,29 +423,115 @@ function GroupGiftingHub() {
     }
   }
 
-  const handleAIExtractBanner = async () => {
-    setIsExtractingBanner(true) // Changed from isExtracting to isExtractingBanner
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-      const extractedImage = "/product-banner.png"
-      setCollectionBanner(extractedImage)
-      setIsAIGeneratedBanner(true)
+  const handleAIExtractBannerFromTitle = async () => {
+    if (!collectionTitle.trim()) {
       toast({
-        title: "AI Extraction Complete",
-        description: "Banner image extracted and optimized from product page",
+        title: "Title Required",
+        description: "Please enter a collection title first to generate a banner.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsExtractingBanner(true)
+    try {
+      const response = await fetch("/api/ai/generate-banner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: collectionTitle }),
+      })
+
+      const data = await response.json()
+
+      if (data.bannerUrl) {
+        setCollectionBanner(data.bannerUrl)
+        setIsAIGeneratedBanner(true)
+        toast({
+          title: "Banner Generated!",
+          description: "AI has created a custom banner based on your title.",
+        })
+      }
+    } catch (error) {
+      console.error("Error generating banner:", error)
+      toast({
+        title: "Generation Failed",
+        description: "Could not generate banner. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsExtractingBanner(false)
+    }
+  }
+
+  const handleExtractProduct = async () => {
+    if (!productLink.trim()) {
+      toast({
+        title: "Input Required",
+        description: "Please enter a product link or gift idea",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsExtractingProduct(true)
+    try {
+      const isUrl = productLink.startsWith("http://") || productLink.startsWith("https://")
+      const endpoint = isUrl ? "/api/ai/extract-product" : "/api/ai/extract-gift-idea"
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(isUrl ? { url: productLink } : { giftIdea: productLink }),
+      })
+
+      if (!response.ok) throw new Error("Failed to extract product")
+
+      const data = await response.json()
+      setExtractedProduct(data)
+
+      toast({
+        title: "Product Extracted!",
+        description: "AI has successfully extracted the product details",
       })
     } catch (error) {
       toast({
         title: "Extraction Failed",
-        description: "Could not extract banner from product page",
+        description: "Unable to extract product details. Please try again.",
         variant: "destructive",
       })
     } finally {
-      setIsExtractingBanner(false) // Changed from isExtracting to isExtractingBanner
+      setIsExtractingProduct(false)
     }
   }
 
-  // Function to remove the banner
+  const handleStartFunding = () => {
+    if (isStartFundingComplete) {
+      setCurrentStep("addProduct") // Changed from "amount" to "addProduct"
+      toast({
+        title: "Funding Started!",
+        description: "Now add a product to your collection.",
+      })
+    } else {
+      toast({
+        title: "Required Fields Missing",
+        description: "Please fill in Collection Title, Banner, and Fundraising Goal",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setCollectionBanner(reader.result as string)
+        setIsAIGeneratedBanner(false)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
   const removeBanner = () => {
     setCollectionBanner(null)
     setIsAIGeneratedBanner(false)
@@ -497,223 +560,156 @@ function GroupGiftingHub() {
     setCurrentStep("amount")
   }
 
-  const handleStartFunding = () => {
-    if (!isAuthenticated) {
-      setIsLoginModalOpen(true)
-      return
-    }
-
-    if (isStartFundingComplete) {
-      setCurrentStep("amount")
-    } else {
-      toast({
-        title: "Required Fields Missing",
-        description: "Please fill in Collection Title, Banner, and Fundraising Goal",
-        variant: "destructive",
-      })
-    }
-  }
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setCollectionBanner(reader.result as string)
-        setIsAIGeneratedBanner(false)
-      }
-      reader.readAsDataURL(file)
-    }
-  }
-
   return (
-    <section className="relative py-6 sm:py-8 md:py-10 lg:py-12 bg-gradient-to-br from-[#EDE6D6] via-[#F5F1E8] to-[#EDE6D6] overflow-hidden">
-      <LoginModal
-        isOpen={isLoginModalOpen}
-        onClose={() => setIsLoginModalOpen(false)}
-        onLoginSuccess={() => {
-          setIsAuthenticated(true)
-          setIsLoginModalOpen(false)
-        }}
-        onSwitchToSignUp={() => {
-          setIsLoginModalOpen(false)
-          setIsSignUpModalOpen(true)
-        }}
-      />
-      <SignUpModal
-        isOpen={isSignUpModalOpen}
-        onClose={() => setIsSignUpModalOpen(false)}
-        onSwitchToLogin={() => {
-          setIsSignUpModalOpen(false)
-          setIsLoginModalOpen(true)
-        }}
-        onSignUpSuccess={() => {
-          setIsAuthenticated(true)
-          setIsSignUpModalOpen(false)
-        }}
-      />
+    <section className="relative bg-gradient-to-br from-[#F5F1E8] via-[#EDE6D6] to-[#F5F1E8] text-gray-900 py-10 sm:py-12 md:py-16 lg:py-20 overflow-hidden">
+      {/* Animated background elements */}
+      <div className="absolute top-1/4 left-0 w-96 h-96 bg-[#DAA520]/10 rounded-full blur-3xl animate-pulse"></div>
+      <div className="absolute bottom-1/4 right-0 w-96 h-96 bg-[#F4C430]/10 rounded-full blur-3xl animate-pulse delay-700"></div>
 
       <div className="container mx-auto px-4 sm:px-6 relative z-10">
-        <h2 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold text-[#654321] text-center mb-8 sm:mb-10 md:mb-12 lg:mb-16">
-          Your Group Gifting Center
-        </h2>
+        <div className="text-center mb-8 sm:mb-10 md:mb-12">
+          <div className="inline-flex items-center justify-center gap-3 mb-4">
+            <div className="p-3 bg-gradient-to-br from-amber-500 via-orange-500 to-rose-500 rounded-2xl shadow-lg">
+              <Users className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
+            </div>
+            <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold bg-gradient-to-r from-[#654321] via-[#8B4513] to-[#654321] bg-clip-text text-transparent">
+              Your Group Gifting Center
+            </h2>
+          </div>
+          <p className="text-sm sm:text-base md:text-lg text-[#8B4513]/70 max-w-2xl mx-auto">
+            Create, fund, and celebrate together with seamless group gifting
+          </p>
+        </div>
 
-        <div className="flex flex-col lg:flex-row gap-6 sm:gap-8 items-stretch">
-          <Card className="bg-white rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl w-full lg:w-2/5">
-            <CardContent className="p-0 flex flex-col">
-              {/* Banner or Product Image */}
-              <div className="relative w-full h-64 sm:h-72 md:h-80 lg:h-96 bg-gradient-to-br from-gray-100 to-gray-200">
-                <Image
-                  src={collectionBanner || product.image || "/placeholder.svg"}
-                  alt={collectionTitle || product.name}
-                  fill
-                  className="object-cover"
-                />
-                {/* Funded Badge */}
-                <div className="absolute top-4 right-4 bg-gradient-to-r from-[#DAA520] to-[#F4C430] text-[#8B4513] px-3 py-1 rounded-full text-xs font-bold shadow-lg">
-                  {calculateGoalProgress().toFixed(0)}% Funded
-                </div>
-              </div>
-
-              {/* Product Details */}
-              <div className="p-4 sm:p-6">
-                <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-2">{collectionTitle || product.name}</h3>
-                {collectionDescription && <p className="text-sm text-gray-600 mb-3">{collectionDescription}</p>}
-
-                {/* Progress Bar */}
-                <div className="mb-4">
-                  <div className="flex justify-between text-sm text-gray-700 mb-2">
-                    <span className="font-semibold">${totalRaised.toFixed(2)} raised</span>
-                    {fundraisingGoal && <span className="font-semibold">Goal: ${fundraisingGoal}</span>}
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden shadow-inner">
-                    <div
-                      className="h-full bg-gradient-to-r from-[#DAA520] to-[#F4C430] rounded-full transition-all duration-500 shadow-md"
-                      style={{ width: `${calculateGoalProgress()}%` }}
-                    ></div>
-                  </div>
-                </div>
-
-                {contributions.length > 0 && (
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <Users className="w-4 h-4 text-[#F4C430]" />
-                    <span className="font-semibold">
-                      {contributions.length} {contributions.length === 1 ? "contributor" : "contributors"}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-5 md:p-6 shadow-2xl w-full lg:w-3/5">
-            {/* Tab Navigation */}
-            <CardContent className="flex mb-6 border-b-2 border-gray-200">
-              {/* Tab 1: Start Funding */}
+        <Card className="bg-white/95 backdrop-blur-sm rounded-3xl overflow-hidden shadow-2xl max-w-5xl mx-auto border-2 border-[#F4C430]/20">
+          <CardContent className="p-0">
+            {/* Tab Navigation with enhanced styling */}
+            <div className="flex border-b-2 border-gray-100 bg-gradient-to-r from-[#F5F1E8]/50 to-white/50">
+              {/* Tab 1: Create Funding */}
               <Button
                 onClick={() => setCurrentStep("customize")}
-                className={`flex-1 pb-3 px-2 sm:px-4 font-semibold text-xs sm:text-base transition-all relative ${
+                className={`flex-1 py-4 sm:py-5 px-3 sm:px-6 font-semibold text-xs sm:text-sm md:text-base transition-all relative group ${
                   currentStep === "customize"
                     ? "text-transparent bg-gradient-to-r from-[#DAA520] to-[#F4C430] bg-clip-text"
-                    : "text-gray-400 hover:text-gray-600"
+                    : "text-gray-500 hover:text-gray-700"
                 }`}
-                variant={currentStep === "customize" ? "default" : "ghost"}
+                variant="ghost"
               >
-                <div className="flex items-center justify-center gap-1 sm:gap-2">
+                <div className="flex items-center justify-center gap-2">
                   <DollarSign
-                    className={`w-3 h-3 sm:w-5 sm:h-5 transition-transform ${
-                      currentStep === "customize" ? "scale-110 text-[#F4C430]" : "text-[#F4C430]"
+                    className={`w-4 h-4 sm:w-5 sm:h-5 transition-all ${
+                      currentStep === "customize"
+                        ? "scale-110 text-[#F4C430]"
+                        : "text-gray-400 group-hover:text-[#F4C430]"
                     }`}
                   />
-                  <span className="hidden sm:inline">1. Start Funding</span>
-                  <span className="sm:hidden">1.</span>
+                  <span className="whitespace-nowrap">1. Create Funding</span>
                   {(collectionTitle || collectionBanner || fundraisingGoal) && (
-                    <CheckCircle className="w-3 h-3 sm:w-4 sm:h-4 text-green-500 animate-pulse" />
+                    <CheckCircle className="w-4 h-4 text-green-500 animate-pulse" />
                   )}
                 </div>
                 {currentStep === "customize" && (
-                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-[#DAA520] to-[#F4C430] animate-pulse"></div>
+                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-[#DAA520] via-[#F4C430] to-[#DAA520] animate-pulse shadow-lg"></div>
                 )}
               </Button>
 
-              {/* Tab 2: Contribute */}
+              {/* Tab 2: Add Product */}
+              <Button
+                onClick={() => setCurrentStep("addProduct")}
+                className={`flex-1 py-4 sm:py-5 px-3 sm:px-6 font-semibold text-xs sm:text-sm md:text-base transition-all relative group ${
+                  currentStep === "addProduct"
+                    ? "text-transparent bg-gradient-to-r from-[#DAA520] to-[#F4C430] bg-clip-text"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+                variant="ghost"
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <Sparkles
+                    className={`w-4 h-4 sm:w-5 sm:h-5 transition-all ${
+                      currentStep === "addProduct"
+                        ? "scale-110 text-[#F4C430]"
+                        : "text-gray-400 group-hover:text-[#F4C430]"
+                    }`}
+                  />
+                  <span className="whitespace-nowrap">2. Add Product</span>
+                  {extractedProduct && <CheckCircle className="w-4 h-4 text-green-500 animate-pulse" />}
+                </div>
+                {currentStep === "addProduct" && (
+                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-[#DAA520] via-[#F4C430] to-[#DAA520] animate-pulse shadow-lg"></div>
+                )}
+              </Button>
+
+              {/* Tab 3: Contribute */}
               <Button
                 onClick={() => setCurrentStep("amount")}
-                className={`flex-1 pb-3 px-2 sm:px-4 font-semibold text-xs sm:text-base transition-all relative ${
+                className={`flex-1 py-4 sm:py-5 px-3 sm:px-6 font-semibold text-xs sm:text-sm md:text-base transition-all relative group ${
                   currentStep === "amount"
                     ? "text-transparent bg-gradient-to-r from-[#DAA520] to-[#F4C430] bg-clip-text"
-                    : "text-gray-400 hover:text-gray-600"
+                    : "text-gray-500 hover:text-gray-700"
                 }`}
-                variant={currentStep === "amount" ? "default" : "ghost"}
+                variant="ghost"
               >
-                <div className="flex items-center justify-center gap-1 sm:gap-2">
+                <div className="flex items-center justify-center gap-2">
                   <CreditCard
-                    className={`w-3 h-3 sm:w-5 sm:h-5 transition-transform ${
-                      currentStep === "amount" ? "scale-110" : ""
+                    className={`w-4 h-4 sm:w-5 sm:h-5 transition-all ${
+                      currentStep === "amount" ? "scale-110 text-[#F4C430]" : "text-gray-400 group-hover:text-[#F4C430]"
                     }`}
                   />
-                  <span className="hidden sm:inline">2. Contribute</span>
-                  <span className="sm:hidden">2.</span>
-                  {amount && cardNumber && cardName && expiry && cvc && (
-                    <CheckCircle className="w-3 h-3 sm:w-4 sm:h-4 text-green-500 animate-pulse" />
-                  )}
+                  <span className="whitespace-nowrap">3. Contribute</span>
+                  {contributions.length > 0 && <CheckCircle className="w-4 h-4 text-green-500 animate-pulse" />}
                 </div>
                 {currentStep === "amount" && (
-                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-[#DAA520] to-[#F4C430] animate-pulse"></div>
+                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-[#DAA520] via-[#F4C430] to-[#DAA520] animate-pulse shadow-lg"></div>
                 )}
               </Button>
 
-              {/* Tab 3: Add Greeting */}
+              {/* Tab 4: Greeting */}
               <Button
-                onClick={() => {
-                  // Simplified check here; full validation happens in handleContinueToMessage
-                  if (amount && cardNumber && cardName && expiry && cvc) {
-                    setCurrentStep("message")
-                  } else {
-                    // Trigger validation if user tries to proceed with incomplete fields
-                    handleContinueToMessage()
-                  }
-                }}
-                className={`flex-1 pb-3 px-2 sm:px-4 font-semibold text-xs sm:text-base transition-all relative ${
+                onClick={() => setCurrentStep("message")}
+                className={`flex-1 py-4 sm:py-5 px-3 sm:px-6 font-semibold text-xs sm:text-sm md:text-base transition-all relative group ${
                   currentStep === "message"
                     ? "text-transparent bg-gradient-to-r from-[#DAA520] to-[#F4C430] bg-clip-text"
-                    : amount && cardNumber && cardName && expiry && cvc
-                      ? "text-gray-600 hover:text-gray-600 cursor-pointer"
-                      : "text-gray-300 cursor-not-allowed"
+                    : "text-gray-500 hover:text-gray-700"
                 }`}
-                variant={
-                  currentStep === "message"
-                    ? "default"
-                    : amount && cardNumber && cardName && expiry && cvc
-                      ? "ghost"
-                      : "outline"
-                }
-                disabled={!(amount && cardNumber && cardName && expiry && cvc)}
+                variant="ghost"
               >
-                <div className="flex items-center justify-center gap-1 sm:gap-2">
+                <div className="flex items-center justify-center gap-2">
                   <Heart
-                    className={`w-3 h-3 sm:w-5 sm:h-5 transition-transform ${
-                      currentStep === "message" ? "scale-110" : ""
+                    className={`w-4 h-4 sm:w-5 sm:h-5 transition-all ${
+                      currentStep === "message"
+                        ? "scale-110 text-[#F4C430]"
+                        : "text-gray-400 group-hover:text-[#F4C430]"
                     }`}
                   />
-                  <span className="hidden sm:inline">3. Greeting</span>
-                  <span className="sm:hidden">3.</span>
-                  {greetingMessage && greetingAuthor && (
-                    <CheckCircle className="w-3 h-3 sm:w-4 sm:h-4 text-green-500 animate-pulse" />
-                  )}
+                  <span className="whitespace-nowrap">4. Greeting</span>
+                  {greetingMessage && <CheckCircle className="w-4 h-4 text-green-500 animate-pulse" />}
                 </div>
                 {currentStep === "message" && (
-                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-[#DAA520] to-[#F4C430] animate-pulse"></div>
+                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-[#DAA520] via-[#F4C430] to-[#DAA520] animate-pulse shadow-lg"></div>
                 )}
               </Button>
-            </CardContent>
+            </div>
 
-            <CardContent className="relative min-h-[400px]">
+            {/* Tab Content with enhanced padding */}
+            <div className="p-6 sm:p-8 md:p-10 lg:p-12 bg-gradient-to-br from-white to-[#F5F1E8]/20">
               {/* Tab 1: Start Funding */}
               {currentStep === "customize" && (
                 <div className="animate-in fade-in-50 slide-in-from-left-5 duration-300">
                   <div className="space-y-4">
-                    {/* Collection Banner Upload */}
+                    <div>
+                      <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-2">
+                        Collection Title <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={collectionTitle}
+                        onChange={(e) => setCollectionTitle(e.target.value)}
+                        placeholder="Birthday Gift for Sarah"
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-[#F4C430] focus:ring-2 focus:ring-[#F4C430]/20 transition-all text-sm"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Customize the title for your gift collection</p>
+                    </div>
+
                     <div>
                       <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-2">
                         Collection Banner <span className="text-red-500">*</span>
@@ -721,12 +717,12 @@ function GroupGiftingHub() {
 
                       <div className="mb-3">
                         <Button
-                          onClick={handleAIExtractBanner} // Changed from handleAutoExtractBanner to handleAIExtractBanner
-                          disabled={isExtractingBanner || !!collectionBanner} // Changed from isExtracting to isExtractingBanner
+                          onClick={handleAIExtractBannerFromTitle}
+                          disabled={isExtractingBanner || !!collectionBanner || !collectionTitle.trim()}
                           variant="outline"
-                          className="w-full border-2 border-[#F4C430] text-[#8B4513] hover:bg-[#F4C430]/10 transition-all bg-transparent text-xs sm:text-sm px-2 sm:px-4"
+                          className="w-full bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 text-white border-2 border-amber-500 hover:from-amber-600 hover:via-orange-600 hover:to-rose-600 hover:border-amber-600 transition-all text-xs sm:text-sm px-2 sm:px-4 shadow-lg hover:shadow-xl"
                         >
-                          {isExtractingBanner ? ( // Changed from isExtracting to isExtractingBanner
+                          {isExtractingBanner ? (
                             <>
                               <Sparkles className="w-3 h-3 sm:w-4 sm:h-4 mr-1.5 sm:mr-2 animate-spin flex-shrink-0" />
                               <span className="truncate">AI Extracting...</span>
@@ -734,7 +730,7 @@ function GroupGiftingHub() {
                           ) : (
                             <>
                               <Sparkles className="w-3 h-3 sm:w-4 sm:h-4 mr-1.5 sm:mr-2 flex-shrink-0" />
-                              <span className="truncate">AI Auto-Extract (800x400px)</span>
+                              <span className="truncate">AI Auto-Extract Banner (800x400px)</span>
                             </>
                           )}
                         </Button>
@@ -742,26 +738,27 @@ function GroupGiftingHub() {
 
                       <div className="relative">
                         {collectionBanner ? (
-                          <div className="relative w-full h-24 sm:h-32 rounded-xl overflow-hidden border-2 border-[#F4C430] mb-2">
+                          <div className="relative w-full h-64 sm:h-80 lg:h-96 rounded-2xl overflow-hidden border-4 border-gradient-to-r from-[#DAA520] via-[#F4C430] to-[#DAA520] shadow-2xl mb-2">
                             <Image
                               src={collectionBanner || "/placeholder.svg"}
                               alt="Collection banner"
                               fill
-                              className="object-cover"
+                              className="object-cover bg-gradient-to-br from-gray-50 to-gray-100"
                             />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/10 via-transparent to-transparent pointer-events-none" />
                             {!isAIGeneratedBanner && (
                               <Button
                                 onClick={removeBanner}
-                                className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white p-1.5 rounded-full shadow-lg"
+                                className="absolute top-3 right-3 bg-red-500 hover:bg-red-600 text-white p-2 rounded-full shadow-xl hover:shadow-2xl transition-all"
                                 size="sm"
                               >
-                                <X className="w-3 h-3" />
+                                <X className="w-4 h-4" />
                               </Button>
                             )}
                             {isAIGeneratedBanner && (
-                              <div className="absolute bottom-2 left-2 bg-[#F4C430] text-[#8B4513] px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-[0.65rem] sm:text-xs font-semibold flex items-center gap-1">
-                                <Sparkles className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                                AI Optimized
+                              <div className="absolute bottom-3 left-3 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 text-white px-3 py-1.5 rounded-full text-xs font-semibold shadow-lg flex items-center gap-1.5">
+                                <Sparkles className="w-3.5 h-3.5" />
+                                AI Generated
                               </div>
                             )}
                           </div>
@@ -769,10 +766,10 @@ function GroupGiftingHub() {
                           <Button
                             onClick={() => fileInputRef.current?.click()}
                             variant="outline"
-                            className="w-full h-24 sm:h-32 border-2 border-dashed border-gray-300 hover:border-[#F4C430] rounded-xl flex flex-col items-center justify-center gap-2 transition-all"
+                            className="w-full h-64 sm:h-80 lg:h-96 border-2 border-dashed border-gray-300 hover:border-[#F4C430] rounded-2xl flex flex-col items-center justify-center gap-3 transition-all hover:shadow-lg"
                           >
-                            <Upload className="w-6 h-6 text-gray-400" />
-                            <span className="text-xs sm:text-sm text-gray-500">Or Upload Manually</span>
+                            <Upload className="w-8 h-8 text-gray-400" />
+                            <span className="text-sm text-gray-500">Or Upload Manually</span>
                           </Button>
                         )}
                         <input
@@ -783,25 +780,10 @@ function GroupGiftingHub() {
                           className="hidden"
                         />
                       </div>
-                      <p className="text-xs text-gray-500 mt-1">
-                        <Sparkles className="w-3 h-3 inline mr-1 text-[#F4C430]" />
-                        AI will automatically extract and optimize to 800x400px
+                      <p className="text-xs text-gray-600 mt-2 flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                        <Sparkles className="w-3.5 h-3.5 text-[#F4C430]" />
+                        AI creates a modern, stylish banner with your collection title beautifully integrated
                       </p>
-                    </div>
-
-                    {/* Collection Title */}
-                    <div>
-                      <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-2">
-                        Collection Title <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={collectionTitle}
-                        onChange={(e) => setCollectionTitle(e.target.value)}
-                        placeholder={product.name}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-[#F4C430] focus:ring-2 focus:ring-[#F4C430]/20 transition-all text-sm"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">Customize the title for your gift collection</p>
                     </div>
 
                     {/* Fundraising Goal */}
@@ -833,7 +815,7 @@ function GroupGiftingHub() {
                             : "bg-gray-300 text-gray-500 cursor-not-allowed opacity-50"
                         }`}
                       >
-                        {isStartFundingComplete ? "Continue to Contribute" : "Start Funding"}
+                        {isStartFundingComplete ? "Add Product" : "Create Funding"}
                       </Button>
                     </div>
                   </div>
@@ -1569,39 +1551,20 @@ function GroupGiftingHub() {
                       </p>
                     </div>
 
-                    {/* Author Name */}
+                    {/* Your Name */}
                     <div>
-                      <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-2">Your Name</label>
+                      <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-2">
+                        Your Name <span className="text-red-500">*</span>
+                      </label>
                       <input
                         type="text"
                         value={greetingAuthor}
                         onChange={(e) => setGreetingAuthor(e.target.value)}
                         placeholder="How should we sign your message?"
                         className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-[#F4C430] focus:ring-2 focus:ring-[#F4C430]/20 transition-all text-sm"
+                        required
                       />
                     </div>
-
-                    {greetingMessage && greetingAuthor && (
-                      <div className="animate-in fade-in-50 slide-in-from-bottom-5 duration-500">
-                        <p className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1">
-                          <Users className="w-3 h-3 fill-current" />
-                          Message Preview:
-                        </p>
-                        <div className="bg-gradient-to-br from-[#F4C430] via-yellow-400 to-yellow-500 rounded-xl p-5 shadow-lg border-2 border-yellow-300 relative overflow-hidden">
-                          <div className="absolute top-0 right-0 w-20 h-20 bg-white/10 rounded-full -mr-10 -mt-10"></div>
-                          <div className="absolute bottom-0 left-0 w-16 h-16 bg-white/10 rounded-full -ml-8 -mb-8"></div>
-                          <div className="relative">
-                            <p className="text-sm text-gray-900 italic mb-3 leading-relaxed whitespace-pre-wrap">
-                              "{greetingMessage}"
-                            </p>
-                            <p className="text-xs text-gray-800 font-semibold flex items-center gap-1">
-                              <Heart className="w-3 h-3 fill-current" />
-                              {greetingAuthor}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
 
                     {/* Action Buttons */}
                     <div className="flex gap-2 pt-2 justify-center">
@@ -1653,9 +1616,97 @@ function GroupGiftingHub() {
                   </div>
                 </div>
               )}
-            </CardContent>
-          </Card>
-        </div>
+
+              {/* Tab 4: Add Product */}
+              {currentStep === "addProduct" && (
+                <div className="animate-in fade-in-50 slide-in-from-left-5 duration-300">
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Sparkles className="w-5 h-5 text-amber-500" />
+                      <h3 className="text-base sm:text-lg font-bold text-gray-900">AI Product Extraction</h3>
+                    </div>
+
+                    {/* Product Link or Gift Idea Input */}
+                    <div>
+                      <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-2">
+                        Product Link or Gift Idea <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={productLink}
+                        onChange={(e) => setProductLink(e.target.value)}
+                        placeholder="Paste product URL or describe gift idea (e.g., 'Nike running shoes')"
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-[#F4C430] focus:ring-2 focus:ring-[#F4C430]/20 transition-all text-sm"
+                      />
+                      <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-amber-500" />
+                        AI extracts all details automatically (image, price, description, store, stock)
+                      </p>
+                    </div>
+
+                    {/* Extract with AI Button */}
+                    <Button
+                      onClick={handleExtractProduct}
+                      disabled={!productLink.trim() || isExtractingProduct}
+                      className={`w-full bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 text-white border-2 border-amber-500 hover:from-amber-600 hover:via-orange-600 hover:to-rose-600 hover:border-amber-600 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed ${
+                        !productLink.trim() ? "opacity-50 cursor-not-allowed" : ""
+                      }`}
+                    >
+                      {isExtractingProduct ? (
+                        <>
+                          <Sparkles className="w-4 h-4 mr-2 animate-spin" />
+                          Extracting Product...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4 mr-2" />
+                          Extract with AI
+                        </>
+                      )}
+                    </Button>
+
+                    {/* Display Extracted Product */}
+                    {extractedProduct && (
+                      <div className="mt-6 p-4 border-2 border-[#F4C430] rounded-xl bg-gradient-to-br from-amber-50 to-orange-50">
+                        <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+                          <CheckCircle className="w-5 h-5 text-green-500" />
+                          Extracted Product
+                        </h4>
+                        <div className="grid md:grid-cols-2 gap-4">
+                          {/* Product Image */}
+                          {extractedProduct.image && (
+                            <div className="relative w-full h-48 rounded-lg overflow-hidden">
+                              <Image
+                                src={extractedProduct.image || "/placeholder.svg"}
+                                alt={extractedProduct.name || "Product"}
+                                fill
+                                className="object-contain p-2"
+                              />
+                            </div>
+                          )}
+
+                          {/* Product Details */}
+                          <div className="space-y-2">
+                            <h5 className="font-bold text-lg text-gray-900">{extractedProduct.name}</h5>
+                            {extractedProduct.price && (
+                              <p className="text-2xl font-bold text-[#DAA520]">${extractedProduct.price}</p>
+                            )}
+                            {extractedProduct.description && (
+                              <p className="text-sm text-gray-600 line-clamp-3">{extractedProduct.description}</p>
+                            )}
+                            {extractedProduct.store && (
+                              <p className="text-xs text-gray-500">Store: {extractedProduct.store}</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </section>
   )

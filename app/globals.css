@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@import "tw-animate-css";
+/* Removed tw-animate-css import causing :dir(rtl) CSS parsing error */
 
 @custom-variant dark (&:is(.dark *));
 
@@ -159,4 +159,17 @@
     animation: gradient 6s ease infinite;
   }
 }
-/* </CHANGE> */
+
+/* Add placeholder styling for contentEditable div */
+@layer base {
+  [contenteditable][data-placeholder]:empty:before {
+    content: attr(data-placeholder);
+    color: rgb(156, 163, 175); /* gray-400 */
+    pointer-events: none;
+  }
+
+  [contenteditable]:focus[data-placeholder]:empty:before {
+    content: attr(data-placeholder);
+    color: rgb(156, 163, 175);
+  }
+}

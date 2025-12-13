@@ -94,7 +94,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onSwitchTo
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#F4C430] focus:border-transparent transition-all"
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#F4C430] focus:border-transparent transition-all text-xs sm:text-sm placeholder:text-xs sm:placeholder:text-sm"
               />
             </div>
           </div>
@@ -112,7 +112,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onSwitchTo
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter your password"
-                className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#F4C430] focus:border-transparent transition-all"
+                className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#F4C430] focus:border-transparent transition-all text-xs sm:text-sm placeholder:text-xs sm:placeholder:text-sm"
               />
               <button
                 type="button"
